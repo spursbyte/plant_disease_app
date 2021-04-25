@@ -1,5 +1,5 @@
 opencv-contrib-python-headless
-tensorflow-cpu==2.4.1
+tensorflow-cpu
 streamlit==0.65.2
 numpy
 pandas
