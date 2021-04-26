@@ -39,7 +39,7 @@ category_index = label_map_util.create_category_index(categories)
 
 detection_graph = tf.Graph()
 with detection_graph.as_default():
-    od_graph_def = tf.GraphDef()
+    od_graph_def = tf.compat.v1.GraphDef()
     with tf.gfile.GFile(PATH_TO_CKPT, 'rb') as fid:
         serialized_graph = fid.read()
         od_graph_def.ParseFromString(serialized_graph)
