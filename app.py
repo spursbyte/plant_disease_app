@@ -1,98 +1,176 @@
-# Imporiting Necessary Libraries
-import streamlit as st
-from PIL import Image
-import io
-import numpy as np
+import os
+import time
+import cv2
+import sys
+import csv
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 import tensorflow as tf
-from utils import clean_image, get_prediction, make_results
+import keras_preprocessing
+import streamlit as st
+import numpy as np
+import pandas as pd
+from numpy import argmax
+from PIL import Image , ImageEnhance
+from resizeimage import resizeimage
+from utils import label_map_util
+from utils import visualization_utils as vis_util
+from keras.preprocessing import image
+from keras_preprocessing.image import ImageDataGenerator
+from pathlib import Path
 
-# Loading the Model and saving to cache
-@st.cache(allow_output_mutation=True)
-def load_model(path):
-    
-    # Xception Model
-    xception_model = tf.keras.models.Sequential([
-    tf.keras.applications.xception.Xception(include_top=False, weights='imagenet', input_shape=(512, 512, 3)),
-    tf.keras.layers.GlobalAveragePooling2D(),
-    tf.keras.layers.Dense(4,activation='softmax')
+tf.executing_eagerly()
+
+MODEL_NAME = './object_detection/inference_graph'
+IMAGE_NAME = './object_detection/images/out.jpg'
+
+CWD_PATH = os.getcwd()
+
+PATH_TO_CKPT = os.path.join('./object_detection/inference_graph/frozen_inference_graph.pb')
+PATH_TO_LABELS = os.path.join('./object_detection/training/labelmap.pbtxt')
+PATH_TO_IMAGE = os.path.join('./object_detection/images/out.jpg')
+
+NUM_CLASSES = 6
+
+
+label_map = label_map_util.load_labelmap(PATH_TO_LABELS)
+categories = label_map_util.convert_label_map_to_categories(label_map, max_num_classes=NUM_CLASSES, use_display_name=True)
+category_index = label_map_util.create_category_index(categories)
+
+detection_graph = tf.Graph()
+with detection_graph.as_default():
+    od_graph_def = tf.GraphDef()
+    with tf.gfile.GFile(PATH_TO_CKPT, 'rb') as fid:
+        serialized_graph = fid.read()
+        od_graph_def.ParseFromString(serialized_graph)
+        tf.import_graph_def(od_graph_def, name='')
+
+    sess = tf.Session(graph=detection_graph)
+
+image_tensor = detection_graph.get_tensor_by_name('image_tensor:0')
+
+
+detection_boxes = detection_graph.get_tensor_by_name('detection_boxes:0')
+
+detection_scores = detection_graph.get_tensor_by_name('detection_scores:0')
+detection_classes = detection_graph.get_tensor_by_name('detection_classes:0')
+
+num_detections = detection_graph.get_tensor_by_name('num_detections:0')
+
+
+in_image = cv2.imread(PATH_TO_IMAGE)
+image_rgb = cv2.cvtColor(in_image, cv2.COLOR_BGR2RGB)
+image_expanded = np.expand_dims(
+    image_rgb, axis=0)
+
+
+(boxes, scores, classes, num) = sess.run(
+    [detection_boxes, detection_scores, detection_classes, num_detections],
+    feed_dict={image_tensor: image_expanded})
+
+
+
+vis_util.visualize_boxes_and_labels_on_image_array(
+    in_image,
+    np.squeeze(boxes),
+    np.squeeze(classes).astype(np.int32),
+    np.squeeze(scores),
+    category_index,
+    use_normalized_coordinates=True,
+    line_thickness=8,
+    min_score_thresh=0.60)
+
+#@st.cache
+def read_markdown_file(markdown_file):
+    return Path(markdown_file).read_text()
+	
+def classification():
+    global path
+    global cn
+    model = tf.keras.models.Sequential([
+
+    tf.keras.layers.Conv2D(64, (3,3), activation='relu', input_shape=(150, 150, 3)),
+    tf.keras.layers.MaxPooling2D(2, 2),
+
+    tf.keras.layers.Conv2D(64, (3,3), activation='relu'),
+    tf.keras.layers.MaxPooling2D(2,2),
+    tf.keras.layers.Conv2D(128, (3,3), activation='relu'),
+    tf.keras.layers.MaxPooling2D(2,2),
+    tf.keras.layers.Conv2D(128, (3,3), activation='relu'),
+    tf.keras.layers.MaxPooling2D(2,2),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dropout(0.5),
+    tf.keras.layers.Dense(512, activation='relu'),
+    tf.keras.layers.Dense(24, activation='softmax')
     ])
-
-
-    # DenseNet Model
-    densenet_model = tf.keras.models.Sequential([
-        tf.keras.applications.densenet.DenseNet121(include_top=False, weights='imagenet',input_shape=(512, 512, 3)),
-    tf.keras.layers.GlobalAveragePooling2D(),
-    tf.keras.layers.Dense(4,activation='softmax')
-    ])
-
-    # Ensembling the Models
-    inputs = tf.keras.Input(shape=(512, 512, 3))
-
-    xception_output = xception_model(inputs)
-    densenet_output = densenet_model(inputs)
-
-    outputs = tf.keras.layers.average([densenet_output, xception_output])
-
-
-    model = tf.keras.Model(inputs=inputs, outputs=outputs)
-
-    # Loading the Weights of Model
-    model.load_weights(path)
     
-    return model
+    LABELS = ['Apple___Apple_scab','Apple___Black_rot','Apple___Cedar_apple_rust','Apple___healthy','Blueberry___healthy',
+		  'Cherry___healthy','Cherry___Powdery_mildew','Grape___Black_rot','Grape___Esca_Black_Measles','Grape___healthy',
+		  'Grape___Leaf_blight_Isariopsis_Leaf_Spot','Orange___Haunglongbing','Peach___Bacterial_spot','Peach___healthy',
+		  'Pepper_bell___Bacterial_spot','Pepper_bell___healthy','Potato___Early_blight','Potato___healthy','Potato___Late_blight',
+		  'Raspberry___healthy','Soybean___healthy','Squash___Powdery_mildew','Strawberry___healthy','Strawberry___Leaf_scorch']
 
+    model.load_weights("./object_classification/rps.h5") #load pretrained model
+    path = './object_classification/images/out.jpg' # path for image to be processed
+    img = image.load_img(path,target_size=(150,150))  
+    x = image.img_to_array(img)
+    x = np.expand_dims(x , axis=0)
+    images = np.vstack([x])
+    classes = model.predict(images , batch_size =10) # predicting images
+    result = argmax(classes)
+    cn = LABELS[result]
 
-# Removing Menu
-hide_streamlit_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            </style>
-            """
-st.markdown(hide_streamlit_style, unsafe_allow_html=True) 
+classification()
 
-# Loading the Model
-model = load_model('model.h5')
-
-# Title and Description
-st.title('Plant Diesease Detection')
-st.write("Just Upload your Plant's Leaf Image and get predictions if the plant is healthy or not")
-
-# Setting the files that can be uploaded
-uploaded_file = st.file_uploader("Choose a Image file", type=["png", "jpg"])
-
-# If there is a uploaded file, start making prediction
-if uploaded_file != None:
+def main():
+    st.set_option('deprecation.showfileUploaderEncoding', False)
+    st.markdown('<style>body{-webkit-app-region: drag;}</style>', unsafe_allow_html=True)
+    st.title("Plant Disease Detection & Classification")
+    st.text("Build with Streamlit and Deeplearning")
+    activities = ["About" ,"Plant Disease"]
+    choice = st.sidebar.selectbox("Select Activty",activities)
+    enhance_type = st.sidebar.radio("Type",["Detection","Classification","Treatment"])
     
-    # Display progress and text
-    progress = st.text("Crunching Image")
-    my_bar = st.progress(0)
-    i = 0
-    
-    # Reading the uploaded image
-    image = Image.open(io.BytesIO(uploaded_file.read()))
-    st.image(np.array(Image.fromarray(
-        np.array(image)).resize((700, 400), Image.ANTIALIAS)), width=None)
-    my_bar.progress(i + 40)
-    
-    # Cleaning the image
-    image = clean_image(image)
-    
-    # Making the predictions
-    predictions, predictions_arr = get_prediction(model, image)
-    my_bar.progress(i + 30)
-    
-    # Making the results
-    result = make_results(predictions, predictions_arr)
-    
-    # Removing progress bar and text after prediction done
-    my_bar.progress(i + 30)
-    progress.empty()
-    i = 0
-    my_bar.empty()
-    
-    # Show the results
-    st.write(f"The plant {result['status']} with {result['prediction']} prediction.")
-
-    
+	
+	
+    if choice =='About':
         
+        intro_markdown = read_markdown_file("./doc/about.md")
+        st.markdown(intro_markdown, unsafe_allow_html=True)
+
+    if choice == 'Plant Disease' and enhance_type=='Detection':
+        st.header("Plant Disease Detection")
+        #c_rate = st.sidebar.slider("Number of classes",1,10)
+        image_file = st.file_uploader("Upload Image",type=['jpg'])
+        st.markdown("* * *")
+        
+        if image_file is not None:
+            our_image = Image.open(image_file)
+            im = our_image.save('./object_detection/images/out.jpg')
+            
+            if st.button('Process'):
+                st.image(in_image , use_column_width=True,channels='RGB')
+            st.image(our_image , use_column_width=True,channels='RGB')
+            st.balloons()
+			
+    if choice == 'Plant Disease' and enhance_type == 'Classification':
+        st.header("Plant Disease Classification")
+        image_input = st.file_uploader("Upload Image",type=['jpg'])
+        st.markdown("* * *")
+		
+        if image_input is not None:
+            some_image = Image.open(image_input)
+            saved_image = some_image.save('./object_classification/images/out.jpg')   
+		
+            if st.button('Classify'):
+                 st.image(path,use_column_width=True)
+                 with st.spinner('Your image is processing'):
+                   time.sleep(5)
+                 #st.write('**Plant Disease name**: ',cn)
+                 st.success(cn)
+                 st.balloons()
+	
+    if enhance_type == 'Treatment' and choice=='Plant Disease':
+        data_markdown = read_markdown_file("./treatment/treatment.md")
+        st.markdown(data_markdown, unsafe_allow_html=True)
+main()
